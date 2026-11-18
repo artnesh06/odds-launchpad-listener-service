@@ -1,0 +1,801 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Chain {
+  id                     Int                  @id @default(autoincrement())
+  chainId                Int                  @unique
+  name                   String
+  network                String
+  rpcUrl                 String
+  blockExplorer          String
+  nativeCurrencyName     String
+  nativeCurrencySymbol   String
+  nativeCurrencyDecimals Int
+  isTestnet              Boolean              @default(false)
+  icon                   String?
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+  activities             Activity[]
+  factories              LaunchpadFactory[]
+  launchpads             Launchpad[]
+  marketplaceListings    MarketplaceListing[]
+  marketplaceOffers      MarketplaceOffer[]
+  marketplaceSales       MarketplaceSale[]
+  nftContracts           NFTContract[]
+  nftFloorPrices         NFTFloorPrice[]
+  nftTransfers           NFTTransfer[]
+  nfts                   NFT[]
+
+  @@map("chains")
+}
+
+model LaunchpadFactory {
+  id                    String           @id @default(cuid())
+  chainId               Int
+  contractAddress       String           @unique
+  version               String
+  deployedChainId       Int
+  owner                 String
+  treasury              String
+  creationFee           String
+  platformFeePercentage Int
+  freeMintFee           String
+  totalLaunchpads       Int              @default(0)
+  isActive              Boolean          @default(true)
+  deployedAt            DateTime?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+  lastProcessedBlock    Int?
+  lastProcessedBlockAt  DateTime?
+  activities            Activity[]
+  settings              FactorySetting[]
+  chain                 Chain            @relation(fields: [chainId], references: [chainId])
+  launchpads            Launchpad[]
+
+  @@index([lastProcessedBlock])
+  @@map("launchpad_factories")
+}
+
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
+model Launchpad {
+  id                String               @id @default(cuid())
+  chainId           Int
+  factoryId         String
+  contractAddress   String               @unique
+  creator           String
+  name              String
+  symbol            String
+  description       String?
+  baseURI           String?
+  unrevealedURI     String?
+  contractURI       String?
+  externalLink      String?
+  totalMaxSupply    Int
+  mintedCount       Int                  @default(0)
+  treasury          String
+  royaltyRecipient  String?
+  royaltyPercentage Int                  @default(0)
+  status            LaunchpadStatus      @default(ACTIVE)
+  volume            String               @default("0")
+  lastMintAt        DateTime?
+  deployTxHash      String?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  lastSyncAt        DateTime             @default(now())
+  manifestHash      String?
+  imageManifestHash String?
+  isFeatured        Boolean              @default(false)
+  isShuffleEnabled  Boolean              @default(false)
+  banners           Banner[]
+  analytics         LaunchpadAnalytics?
+  metadata          LaunchpadMetadata?
+  phases            LaunchpadPhase[]
+  whitelists        LaunchpadWhitelist[]
+  chain             Chain                @relation(fields: [chainId], references: [chainId])
+  factory           LaunchpadFactory     @relation(fields: [factoryId], references: [id])
+  mints             Mint[]
+
+  @@index([creator])
+  @@index([chainId, creator])
+  @@index([createdAt])
+  @@index([chainId, createdAt])
+  @@index([isFeatured])
+  @@map("launchpads")
+}
+
+model LaunchpadPhase {
+  id               String    @id @default(cuid())
+  launchpadId      String
+  name             String
+  phaseType        PhaseType
+  startTime        DateTime
+  endTime          DateTime?
+  price            String
+  maxMintPerWallet Int?
+  totalLimit       Int?
+  mintedCount      Int       @default(0)
+  isActive         Boolean   @default(true)
+  merkleRoot       String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  phaseIndex       Int
+  launchpad        Launchpad @relation(fields: [launchpadId], references: [id], onDelete: Cascade)
+  mints            Mint[]
+
+  @@unique([launchpadId, phaseIndex])
+  @@map("launchpad_phases")
+}
+
+model LaunchpadWhitelist {
+  id          String    @id @default(cuid())
+  launchpadId String
+  phaseId     Int
+  address     String
+  allocation  Int       @default(1)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  launchpad   Launchpad @relation(fields: [launchpadId], references: [id], onDelete: Cascade)
+
+  @@unique([launchpadId, phaseId, address])
+  @@index([launchpadId, phaseId])
+  @@map("launchpad_whitelists")
+}
+
+model Mint {
+  id          String          @id @default(cuid())
+  launchpadId String
+  phaseId     String?
+  minter      String
+  tokenId     Int?
+  quantity    Int             @default(1)
+  price       String
+  txHash      String
+  blockNumber Int?
+  gasUsed     String?
+  createdAt   DateTime        @default(now())
+  launchpad   Launchpad       @relation(fields: [launchpadId], references: [id], onDelete: Cascade)
+  phase       LaunchpadPhase? @relation(fields: [phaseId], references: [id])
+
+  @@unique([launchpadId, tokenId])
+  @@map("mints")
+}
+
+model LaunchpadMetadata {
+  id          String    @id @default(cuid())
+  launchpadId String    @unique
+  image       String?
+  bannerImage String?
+  website     String?
+  twitter     String?
+  discord     String?
+  telegram    String?
+  medium      String?
+  github      String?
+  tags        String[]
+  category    String?
+  featured    Boolean   @default(false)
+  verified    Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  launchpad   Launchpad @relation(fields: [launchpadId], references: [id], onDelete: Cascade)
+
+  @@map("launchpad_metadata")
+}
+
+model LaunchpadAnalytics {
+  id            String    @id @default(cuid())
+  launchpadId   String    @unique
+  totalVolume   String    @default("0")
+  totalMints    Int       @default(0)
+  uniqueHolders Int       @default(0)
+  avgMintPrice  String    @default("0")
+  floorPrice    String?
+  lastSalePrice String?
+  views         Int       @default(0)
+  likes         Int       @default(0)
+  calculatedAt  DateTime  @default(now())
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  launchpad     Launchpad @relation(fields: [launchpadId], references: [id], onDelete: Cascade)
+
+  @@map("launchpad_analytics")
+}
+
+model Activity {
+  id          String            @id @default(cuid())
+  chainId     Int
+  factoryId   String?
+  launchpadId String?
+  type        ActivityType
+  actor       String
+  description String
+  txHash      String?
+  blockNumber Int?
+  metadata    Json?
+  createdAt   DateTime          @default(now())
+  chain       Chain             @relation(fields: [chainId], references: [chainId])
+  factory     LaunchpadFactory? @relation(fields: [factoryId], references: [id])
+
+  @@index([chainId, type, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc)])
+  @@index([txHash, type, launchpadId])
+  @@map("activities")
+}
+
+model FactorySetting {
+  id        String           @id @default(cuid())
+  factoryId String
+  key       String
+  value     String
+  type      SettingType      @default(STRING)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  factory   LaunchpadFactory @relation(fields: [factoryId], references: [id], onDelete: Cascade)
+
+  @@unique([factoryId, key])
+  @@map("factory_settings")
+}
+
+model BulkOperation {
+  id          String            @id @default(cuid())
+  name        String
+  type        BulkOperationType
+  status      BulkStatus        @default(PENDING)
+  progress    Int               @default(0)
+  total       Int
+  processed   Int               @default(0)
+  errors      Json[]            @default([])
+  data        Json
+  result      Json?
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdBy   String
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@map("bulk_operations")
+}
+
+model AdminUser {
+  id           String    @id @default(cuid())
+  address      String    @unique
+  role         AdminRole @default(ADMIN)
+  isActive     Boolean   @default(true)
+  lastActiveAt DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@map("admin_users")
+}
+
+model Banner {
+  id                String       @id @default(cuid())
+  title             String
+  creator           String
+  network           String       @default("evm")
+  image             String
+  thumbnail         String?
+  type              BannerType   @default(IMAGE)
+  twitter           String?
+  discord           String?
+  telegram          String?
+  collectionAddress String?
+  launchpadId       String?
+  mintedDate        DateTime?
+  mintedLink        String?
+  status            BannerStatus @default(ACTIVE)
+  sequence          Int          @default(0)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  endDate           DateTime?
+  promoCode         String?      @unique
+  startDate         DateTime?
+  launchpad         Launchpad?   @relation(fields: [launchpadId], references: [id])
+
+  @@index([status, sequence])
+  @@index([startDate, endDate])
+  @@map("banners")
+}
+
+model PromoRequest {
+  id                String             @id @default(cuid())
+  promoCode         String             @unique
+  collectionName    String
+  collectionAddress String?
+  creator           String
+  chainId           Int
+  chainName         String
+  image             String?
+  thumbnail         String?
+  twitter           String?
+  discord           String?
+  telegram          String?
+  description       String?
+  status            PromoRequestStatus @default(PENDING)
+  rejectionReason   String?
+  bannerId          String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@index([status, createdAt])
+  @@map("promo_requests")
+}
+
+model NFT {
+  id                     String         @id @default(cuid())
+  chainId                Int
+  contractAddress        String
+  tokenId                String
+  tokenType              String
+  name                   String?
+  description            String?
+  tokenUri               String?
+  imageCachedUrl         String?
+  imageThumbnailUrl      String?
+  imagePngUrl            String?
+  imageContentType       String?
+  imageSize              Int?
+  imageOriginalUrl       String?
+  rawMetadata            Json?
+  rawTokenUri            String?
+  timeLastUpdated        DateTime       @default(now())
+  acquiredBlockTimestamp DateTime?
+  acquiredBlockNumber    Int?
+  mintAddress            String?
+  mintBlockNumber        Int?
+  mintTimestamp          DateTime?
+  mintTransactionHash    String?
+  isSpam                 Boolean        @default(false)
+  isAirdrop              Boolean        @default(false)
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+  attributes             NFTAttribute[]
+  ownership              NFTOwnership[]
+  rarity                 NFTRarity?
+  transfers              NFTTransfer[]
+  chain                  Chain          @relation(fields: [chainId], references: [chainId])
+  contract               NFTContract    @relation(fields: [contractAddress, chainId], references: [address, chainId])
+
+  @@unique([contractAddress, tokenId, chainId])
+  @@index([chainId, contractAddress])
+  @@index([isSpam, isAirdrop])
+  @@map("nfts")
+}
+
+model NFTContract {
+  id                    String                  @id @default(cuid())
+  chainId               Int
+  address               String
+  name                  String?
+  symbol                String?
+  totalSupply           String?
+  tokenType             String?
+  contractDeployer      String?
+  deployedBlockNumber   Int?
+  openSeaFloorPrice     Float?
+  openSeaCollectionName String?
+  openSeaCollectionSlug String?
+  openSeaSafelistStatus String?
+  openSeaImageUrl       String?
+  openSeaDescription    String?
+  openSeaExternalUrl    String?
+  openSeaTwitter        String?
+  openSeaDiscord        String?
+  openSeaBannerImageUrl String?
+  openSeaLastIngestedAt DateTime?
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+  marketplaceListings   MarketplaceListing[]
+  marketplaceSales      MarketplaceSale[]
+  analytics             NFTCollectionAnalytics?
+  chain                 Chain                   @relation(fields: [chainId], references: [chainId])
+  floorPrices           NFTFloorPrice[]
+  nfts                  NFT[]
+
+  @@unique([address, chainId])
+  @@index([chainId])
+  @@map("nft_contracts")
+}
+
+model NFTAttribute {
+  id           String   @id @default(cuid())
+  nftId        String
+  traitType    String
+  value        String
+  displayType  String?
+  numericValue Float?
+  prevalence   Float?
+  count        Int?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  nft          NFT      @relation(fields: [nftId], references: [id], onDelete: Cascade)
+
+  @@index([nftId])
+  @@index([traitType, value])
+  @@map("nft_attributes")
+}
+
+model NFTOwnership {
+  id             String   @id @default(cuid())
+  nftId          String
+  ownerAddress   String
+  balance        String   @default("1")
+  acquiredAt     DateTime
+  acquiredBlock  Int
+  acquiredTxHash String
+  isCurrent      Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  nft            NFT      @relation(fields: [nftId], references: [id], onDelete: Cascade)
+
+  @@index([nftId, isCurrent])
+  @@index([ownerAddress, isCurrent])
+  @@map("nft_ownership")
+}
+
+model NFTTransfer {
+  id             String       @id @default(cuid())
+  chainId        Int
+  nftId          String
+  fromAddress    String
+  toAddress      String
+  quantity       String       @default("1")
+  txHash         String
+  blockNumber    Int
+  blockTimestamp DateTime
+  logIndex       Int
+  transferType   TransferType
+  createdAt      DateTime     @default(now())
+  chain          Chain        @relation(fields: [chainId], references: [chainId])
+  nft            NFT          @relation(fields: [nftId], references: [id], onDelete: Cascade)
+
+  @@unique([txHash, logIndex])
+  @@index([nftId])
+  @@index([fromAddress])
+  @@index([toAddress])
+  @@index([blockNumber])
+  @@map("nft_transfers")
+}
+
+model MarketplaceListing {
+  id              String           @id @default(cuid())
+  chainId         Int
+  marketplace     Marketplace
+  contractAddress String
+  tokenId         String
+  seller          String
+  price           String
+  currency        String
+  quantity        String           @default("1")
+  startTime       DateTime
+  endTime         DateTime?
+  expirationTime  DateTime?
+  status          ListingStatus
+  listingTxHash   String
+  listingBlock    Int
+  cancelTxHash    String?
+  cancelBlock     Int?
+  saleTxHash      String?
+  saleBlock       Int?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  chain           Chain            @relation(fields: [chainId], references: [chainId])
+  contract        NFTContract      @relation(fields: [contractAddress, chainId], references: [address, chainId])
+  sale            MarketplaceSale?
+
+  @@index([chainId, marketplace, status])
+  @@index([contractAddress, tokenId])
+  @@index([seller])
+  @@map("marketplace_listings")
+}
+
+model MarketplaceSale {
+  id                  String              @id @default(cuid())
+  chainId             Int
+  marketplace         Marketplace
+  contractAddress     String
+  tokenId             String
+  buyer               String
+  seller              String
+  price               String
+  currency            String
+  quantity            String              @default("1")
+  sellerFeeAmount     String?
+  sellerFeeCurrency   String?
+  protocolFeeAmount   String?
+  protocolFeeCurrency String?
+  royaltyFeeAmount    String?
+  royaltyFeeCurrency  String?
+  txHash              String
+  blockNumber         Int
+  blockTimestamp      DateTime
+  logIndex            Int
+  bundleIndex         Int                 @default(0)
+  taker               String
+  createdAt           DateTime            @default(now())
+  listingId           String?             @unique
+  chain               Chain               @relation(fields: [chainId], references: [chainId])
+  contract            NFTContract         @relation(fields: [contractAddress, chainId], references: [address, chainId])
+  listing             MarketplaceListing? @relation(fields: [listingId], references: [id])
+
+  @@unique([txHash, logIndex, bundleIndex])
+  @@index([chainId, marketplace])
+  @@index([contractAddress, tokenId])
+  @@index([buyer])
+  @@index([seller])
+  @@index([blockNumber])
+  @@map("marketplace_sales")
+}
+
+model MarketplaceOffer {
+  id              String      @id @default(cuid())
+  chainId         Int
+  marketplace     Marketplace
+  contractAddress String
+  tokenId         String
+  offerer         String
+  price           String
+  currency        String
+  quantity        String      @default("1")
+  offerTime       DateTime
+  expirationTime  DateTime?
+  status          OfferStatus
+  offerTxHash     String
+  offerBlock      Int
+  acceptTxHash    String?
+  acceptBlock     Int?
+  cancelTxHash    String?
+  cancelBlock     Int?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  chain           Chain       @relation(fields: [chainId], references: [chainId])
+
+  @@index([chainId, marketplace, status])
+  @@index([contractAddress, tokenId])
+  @@index([offerer])
+  @@map("marketplace_offers")
+}
+
+model NFTFloorPrice {
+  id              String      @id @default(cuid())
+  chainId         Int
+  contractAddress String
+  marketplace     Marketplace
+  floorPrice      Float
+  priceCurrency   String
+  collectionUrl   String?
+  retrievedAt     DateTime    @default(now())
+  createdAt       DateTime    @default(now())
+  chain           Chain       @relation(fields: [chainId], references: [chainId])
+  contract        NFTContract @relation(fields: [contractAddress, chainId], references: [address, chainId])
+
+  @@index([contractAddress, chainId, marketplace])
+  @@index([retrievedAt])
+  @@map("nft_floor_prices")
+}
+
+model NFTRarity {
+  id              String   @id @default(cuid())
+  nftId           String   @unique
+  strategyId      String
+  strategyVersion String
+  rank            Int
+  score           Float
+  maxRank         Int
+  totalSupply     Int
+  rarityScore     Float
+  prevalence      Float
+  percentile      Float
+  calculatedAt    DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  nft             NFT      @relation(fields: [nftId], references: [id], onDelete: Cascade)
+
+  @@index([rank])
+  @@map("nft_rarity")
+}
+
+model NFTCollectionAnalytics {
+  id              String      @id @default(cuid())
+  chainId         Int
+  contractAddress String
+  totalVolume     String      @default("0")
+  volume24h       String      @default("0")
+  volume7d        String      @default("0")
+  volume30d       String      @default("0")
+  totalSales      Int         @default(0)
+  sales24h        Int         @default(0)
+  sales7d         Int         @default(0)
+  sales30d        Int         @default(0)
+  floorPrice      String?
+  avgSalePrice    String      @default("0")
+  lastSalePrice   String?
+  highestSale     String?
+  uniqueHolders   Int         @default(0)
+  totalSupply     Int         @default(0)
+  calculatedAt    DateTime    @default(now())
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  contract        NFTContract @relation(fields: [contractAddress, chainId], references: [address, chainId])
+
+  @@unique([contractAddress, chainId])
+  @@map("nft_collection_analytics")
+}
+
+model ProcessedEvent {
+  id              String   @id @default(cuid())
+  transactionHash String
+  logIndex        Int
+  processedAt     DateTime @default(now())
+
+  @@unique([transactionHash, logIndex])
+  @@index([processedAt])
+  @@map("processed_events")
+}
+
+model ErrorLog {
+  id              String   @id @default(cuid())
+  errorType       String
+  severity        String
+  message         String
+  stack           String?
+  component       String
+  operation       String
+  chainId         Int?
+  contractAddress String?
+  tokenId         String?
+  txHash          String?
+  blockNumber     Int?
+  metadata        Json?
+  resolved        Boolean  @default(false)
+  createdAt       DateTime @default(now())
+
+  @@index([errorType, severity])
+  @@index([component, operation])
+  @@index([createdAt])
+  @@map("error_logs")
+}
+
+model AdminActivityLog {
+  id              String    @id @default(cuid()) @db.VarChar(25)
+  operationType   String    @db.VarChar(50)
+  status          String    @db.VarChar(20)
+  chainId         Int?
+  contractAddress String?   @db.VarChar(42)
+  startedAt       DateTime  @default(now()) @db.Timestamp(6)
+  completedAt     DateTime? @db.Timestamp(6)
+  duration        Int?
+  itemsProcessed  Int       @default(0)
+  itemsFailed     Int       @default(0)
+  errorMessage    String?
+  metadata        Json?     @db.Json
+
+  @@index([chainId, contractAddress], map: "idx_chainId_contractAddress")
+  @@index([operationType, status], map: "idx_operationType_status")
+  @@index([startedAt], map: "idx_startedAt")
+  @@index([status, startedAt], map: "idx_status_startedAt")
+  @@map("admin_activity_logs")
+}
+
+enum LaunchpadStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+enum PhaseType {
+  PRESALE
+  PUBLIC
+  ALLOWLIST
+  FREE
+}
+
+enum ActivityType {
+  FACTORY_CREATED
+  LAUNCHPAD_CREATED
+  LAUNCHPAD_UPDATED
+  MINT_OCCURRED
+  PHASE_CREATED
+  PHASE_UPDATED
+  FEE_UPDATED
+  TREASURY_UPDATED
+  OWNERSHIP_TRANSFERRED
+  EMERGENCY_WITHDRAW
+  BURN_OCCURRED
+  AIRDROP_OCCURRED
+  COLLECTION_REVEALED
+  ROYALTY_UPDATED
+  METADATA_UPDATED
+  CONTRACT_PAUSED
+  CONTRACT_UNPAUSED
+  TRANSFER_LOCK_UPDATED
+  ROLE_GRANTED
+  ROLE_REVOKED
+  TRANSFER_OCCURRED
+}
+
+enum SettingType {
+  STRING
+  NUMBER
+  BOOLEAN
+  JSON
+}
+
+enum BulkOperationType {
+  CREATE_LAUNCHPADS
+  UPDATE_FEES
+  UPDATE_TREASURIES
+  EXPORT_DATA
+}
+
+enum BulkStatus {
+  PENDING
+  RUNNING
+  PAUSED
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum AdminRole {
+  SUPER_ADMIN
+  ADMIN
+  MODERATOR
+  VIEWER
+}
+
+enum BannerType {
+  IMAGE
+  VIDEO
+}
+
+enum BannerStatus {
+  ACTIVE
+  INACTIVE
+  SCHEDULED
+}
+
+enum PromoRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum TransferType {
+  MINT
+  TRANSFER
+  BURN
+}
+
+enum Marketplace {
+  OPENSEA
+  SEAPORT
+  MAGIC_EDEN
+  BLUR
+  LOOKSRARE
+  X2Y2
+  RARIBLE
+  UNKNOWN
+}
+
+enum ListingStatus {
+  ACTIVE
+  SOLD
+  CANCELLED
+  EXPIRED
+}
+
+enum OfferStatus {
+  ACTIVE
+  ACCEPTED
+  CANCELLED
+  EXPIRED
+}

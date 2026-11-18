@@ -1,0 +1,18 @@
+services:
+  - type: worker
+    name: nft-listener-service
+    env: node
+    buildCommand: npm install && npm run db:generate
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: MEGAETH_RPC_URL
+        sync: false
+      - key: SEPOLIA_RPC_URL
+        sync: false
+      - key: MONAD_RPC_URL
+        sync: false
+    autoDeploy: true

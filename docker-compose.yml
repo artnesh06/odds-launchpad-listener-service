@@ -1,0 +1,114 @@
+services:
+  traefik:
+    image: traefik:v3.6
+    container_name: traefik
+    restart: unless-stopped
+    command:
+      - "--api=true"
+      - "--api.dashboard=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      # Transport timeouts for large file uploads (30 minutes)
+      - "--entrypoints.websecure.transport.respondingTimeouts.readTimeout=1800s"
+      - "--entrypoints.websecure.transport.respondingTimeouts.writeTimeout=1800s"
+      - "--entrypoints.websecure.transport.respondingTimeouts.idleTimeout=1800s"
+      - "--entrypoints.web.transport.respondingTimeouts.readTimeout=1800s"
+      - "--entrypoints.web.transport.respondingTimeouts.writeTimeout=1800s"
+      - "--entrypoints.web.transport.respondingTimeouts.idleTimeout=1800s"
+      # Global backend timeouts (30 minutes)
+      - "--serversTransport.forwardingTimeouts.dialTimeout=1800s"
+      - "--serversTransport.forwardingTimeouts.responseHeaderTimeout=1800s"
+      - "--serversTransport.forwardingTimeouts.idleConnTimeout=1800s"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.letsencrypt.acme.email=admin@oddslaunchpad.com"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+      - "--log.level=WARN"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik-letsencrypt:/letsencrypt
+    labels:
+      - "traefik.enable=true"
+      # Dashboard
+      - "traefik.http.routers.dashboard.rule=Host(`213.136.94.62`) && (PathPrefix(`/dashboard`) || PathPrefix(`/api`))"
+      - "traefik.http.routers.dashboard.entrypoints=web"
+      - "traefik.http.routers.dashboard.service=api@internal"
+      - "traefik.http.routers.dashboard.middlewares=auth,dashboard-ratelimit"
+      - "traefik.http.middlewares.auth.basicauth.users=admin:$$apr1$$0Bl0dkLW$$7H6G2geCn6bUJba8LFcB51"
+      - "traefik.http.middlewares.dashboard-ratelimit.ratelimit.average=10"
+      - "traefik.http.middlewares.dashboard-ratelimit.ratelimit.burst=20"
+    networks:
+      - web
+
+  nft-listener:
+    image: ghcr.io/oddslaunchpad/odds-launchpad-listener-service:prod-latest
+    container_name: nft-listener
+    restart: unless-stopped
+    env_file:
+      - /opt/nft-listener-prod/.env
+    mem_limit: 4g
+    cpus: 2
+    labels:
+      - "traefik.enable=true"
+      # Rate limiting middleware
+      - "traefik.http.middlewares.api-ratelimit.ratelimit.average=100"
+      - "traefik.http.middlewares.api-ratelimit.ratelimit.burst=200"
+      - "traefik.http.middlewares.api-ratelimit.ratelimit.period=1s"
+      # Security headers middleware
+      - "traefik.http.middlewares.security-headers.headers.frameDeny=true"
+      - "traefik.http.middlewares.security-headers.headers.contentTypeNosniff=true"
+      - "traefik.http.middlewares.security-headers.headers.browserXssFilter=true"
+      - "traefik.http.middlewares.security-headers.headers.referrerPolicy=strict-origin-when-cross-origin"
+      # Upload buffering middleware for large file uploads (2GB max, no memory buffering)
+      - "traefik.http.middlewares.upload-buffering.buffering.maxRequestBodyBytes=2147483648"
+      - "traefik.http.middlewares.upload-buffering.buffering.memRequestBodyBytes=2097152"
+      - "traefik.http.middlewares.upload-buffering.buffering.maxResponseBodyBytes=2147483648"
+      - "traefik.http.middlewares.upload-buffering.buffering.memResponseBodyBytes=2097152"
+      # HTTPS API
+      - "traefik.http.routers.nft-api.rule=Host(`backend.oddslaunchpad.com`)"
+      - "traefik.http.routers.nft-api.entrypoints=websecure"
+      - "traefik.http.routers.nft-api.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.nft-api.service=nft-api"
+      # TEMPORARILY DISABLED MIDDLEWARES FOR UPLOAD TESTING
+      # - "traefik.http.routers.nft-api.middlewares=api-ratelimit,security-headers"
+      - "traefik.http.services.nft-api.loadbalancer.serversTransport=long-timeout@docker"
+      - "traefik.http.services.nft-api.loadbalancer.server.port=3001"
+      # Server transport with long timeout for uploads (30 minutes)
+      - "traefik.http.services.nft-api.loadbalancer.responseForwarding.flushInterval=100ms"
+      - "traefik.http.services.nft-api.loadbalancer.passHostHeader=true"
+      - "traefik.http.serversTransports.long-timeout.forwardingTimeouts.dialTimeout=1800s"
+      - "traefik.http.serversTransports.long-timeout.forwardingTimeouts.responseHeaderTimeout=0"
+      - "traefik.http.serversTransports.long-timeout.forwardingTimeouts.idleConnTimeout=1800s"
+      # HTTP redirect
+      - "traefik.http.routers.nft-api-http.rule=Host(`backend.oddslaunchpad.com`)"
+      - "traefik.http.routers.nft-api-http.entrypoints=web"
+      - "traefik.http.routers.nft-api-http.middlewares=redirect-to-https"
+      - "traefik.http.routers.nft-api-http.service=nft-api"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+      # WebSocket
+      - "traefik.http.routers.nft-ws.rule=Host(`backend.oddslaunchpad.com`) && PathPrefix(`/socket.io`)"
+      - "traefik.http.routers.nft-ws.entrypoints=websecure"
+      - "traefik.http.routers.nft-ws.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.nft-ws.service=nft-ws"
+      - "traefik.http.routers.nft-ws.middlewares=security-headers"
+      - "traefik.http.services.nft-ws.loadbalancer.server.port=3002"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 60s
+      timeout: 30s
+      retries: 5
+      start_period: 60s
+    networks:
+      - web
+
+networks:
+  web:
+    driver: bridge
+
+volumes:
+  traefik-letsencrypt:

@@ -1,0 +1,111 @@
+services:
+  traefik-dev:
+    image: traefik:v3.6
+    container_name: traefik-dev
+    restart: unless-stopped
+    command:
+      - "--api=true"
+      - "--api.dashboard=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      # Transport timeouts for large file uploads (30 minutes)
+      - "--entrypoints.websecure.transport.respondingTimeouts.readTimeout=1800s"
+      - "--entrypoints.websecure.transport.respondingTimeouts.writeTimeout=1800s"
+      - "--entrypoints.websecure.transport.respondingTimeouts.idleTimeout=1800s"
+      - "--entrypoints.web.transport.respondingTimeouts.readTimeout=1800s"
+      - "--entrypoints.web.transport.respondingTimeouts.writeTimeout=1800s"
+      - "--entrypoints.web.transport.respondingTimeouts.idleTimeout=1800s"
+      # Global backend timeouts (30 minutes)
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.letsencrypt.acme.email=admin@oddslaunchpad.com"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+      - "--log.level=DEBUG"  # More verbose logging for dev
+    ports:
+      - "8080:80"    # Different port to avoid conflict with prod
+      - "8443:443"   # Different port to avoid conflict with prod
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik-letsencrypt-dev:/letsencrypt
+    labels:
+      - "traefik.enable=true"
+      # Dashboard - accessible on different port
+      - "traefik.http.routers.dashboard-dev.rule=Host(`213.136.94.62`) && (PathPrefix(`/dashboard`) || PathPrefix(`/api`))"
+      - "traefik.http.routers.dashboard-dev.entrypoints=web"
+      - "traefik.http.routers.dashboard-dev.service=api@internal"
+      - "traefik.http.routers.dashboard-dev.middlewares=auth-dev,dashboard-ratelimit-dev"
+      - "traefik.http.middlewares.auth-dev.basicauth.users=admin:$$apr1$$0Bl0dkLW$$7H6G2geCn6bUJba8LFcB51"
+      - "traefik.http.middlewares.dashboard-ratelimit-dev.ratelimit.average=10"
+      - "traefik.http.middlewares.dashboard-ratelimit-dev.ratelimit.burst=20"
+    networks:
+      - web-dev
+
+  nft-listener-dev:
+    image: ghcr.io/oddslaunchpad/odds-launchpad-listener-service:dev-latest
+    container_name: nft-listener-dev
+    restart: unless-stopped
+    env_file:
+      - /opt/nft-listener/.env
+    mem_limit: 4g
+    cpus: 2
+    # Expose ports directly for easier debugging in dev
+    ports:
+      - "3011:3001"  # API port exposed for direct access
+      - "3012:3002"  # WebSocket port exposed for direct access
+    labels:
+      - "traefik.enable=true"
+      # Rate limiting middleware - more relaxed for dev
+      - "traefik.http.middlewares.api-ratelimit-dev.ratelimit.average=200"
+      - "traefik.http.middlewares.api-ratelimit-dev.ratelimit.burst=400"
+      - "traefik.http.middlewares.api-ratelimit-dev.ratelimit.period=1s"
+      # Security headers middleware
+      - "traefik.http.middlewares.security-headers-dev.headers.frameDeny=true"
+      - "traefik.http.middlewares.security-headers-dev.headers.contentTypeNosniff=true"
+      - "traefik.http.middlewares.security-headers-dev.headers.browserXssFilter=true"
+      - "traefik.http.middlewares.security-headers-dev.headers.referrerPolicy=strict-origin-when-cross-origin"
+      # Upload buffering middleware for large file uploads (2GB max, no memory buffering)
+      - "traefik.http.middlewares.upload-buffering-dev.buffering.maxRequestBodyBytes=2147483648"
+      - "traefik.http.middlewares.upload-buffering-dev.buffering.memRequestBodyBytes=2097152"
+      - "traefik.http.middlewares.upload-buffering-dev.buffering.maxResponseBodyBytes=2147483648"
+      - "traefik.http.middlewares.upload-buffering-dev.buffering.memResponseBodyBytes=2097152"
+      # HTTPS API - using dev subdomain
+      - "traefik.http.routers.nft-api-dev.rule=Host(`dev.backend.oddslaunchpad.com`)"
+      - "traefik.http.routers.nft-api-dev.entrypoints=websecure"
+      - "traefik.http.routers.nft-api-dev.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.nft-api-dev.service=nft-api-dev"
+      # Middlewares disabled for easier dev testing
+      # - "traefik.http.routers.nft-api-dev.middlewares=api-ratelimit-dev,security-headers-dev"
+      - "traefik.http.services.nft-api-dev.loadbalancer.server.port=3001"
+      # Server transport with long timeout for uploads (30 minutes)
+      - "traefik.http.services.nft-api-dev.loadbalancer.responseForwarding.flushInterval=100ms"
+      - "traefik.http.services.nft-api-dev.loadbalancer.passHostHeader=true"
+      # HTTP redirect
+      - "traefik.http.routers.nft-api-dev-http.rule=Host(`dev.backend.oddslaunchpad.com`)"
+      - "traefik.http.routers.nft-api-dev-http.entrypoints=web"
+      - "traefik.http.routers.nft-api-dev-http.middlewares=redirect-to-https-dev"
+      - "traefik.http.routers.nft-api-dev-http.service=nft-api-dev"
+      - "traefik.http.middlewares.redirect-to-https-dev.redirectscheme.scheme=https"
+      # WebSocket
+      - "traefik.http.routers.nft-ws-dev.rule=Host(`dev.backend.oddslaunchpad.com`) && PathPrefix(`/socket.io`)"
+      - "traefik.http.routers.nft-ws-dev.entrypoints=websecure"
+      - "traefik.http.routers.nft-ws-dev.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.nft-ws-dev.service=nft-ws-dev"
+      - "traefik.http.routers.nft-ws-dev.middlewares=security-headers-dev"
+      - "traefik.http.services.nft-ws-dev.loadbalancer.server.port=3002"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 60s
+      timeout: 30s
+      retries: 5
+      start_period: 60s
+    networks:
+      - web-dev
+
+networks:
+  web-dev:
+    driver: bridge
+
+volumes:
+  traefik-letsencrypt-dev:

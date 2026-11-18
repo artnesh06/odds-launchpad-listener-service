@@ -1,0 +1,47 @@
+{
+  "totalCollections": 39,
+  "collectionsChecked": 0,
+  "mismatches": [],
+  "orphanedWhitelists": [],
+  "summary": {
+    "consistent": 0,
+    "inconsistent": 0,
+    "errors": 39,
+    "orphanedWhitelistRecords": 0
+  },
+  "chains": [
+    {
+      "chainId": 1,
+      "chainName": "Ethereum",
+      "report": {
+        "totalCollections": 1,
+        "collectionsChecked": 0,
+        "mismatches": [],
+        "orphanedWhitelists": [],
+        "summary": {
+          "consistent": 0,
+          "inconsistent": 0,
+          "errors": 1,
+          "orphanedWhitelistRecords": 0
+        }
+      }
+    },
+    {
+      "chainId": 6343,
+      "chainName": "MegaETH Testnet V2",
+      "report": {
+        "totalCollections": 38,
+        "collectionsChecked": 0,
+        "mismatches": [],
+        "orphanedWhitelists": [],
+        "summary": {
+          "consistent": 0,
+          "inconsistent": 0,
+          "errors": 38,
+          "orphanedWhitelistRecords": 0
+        }
+      }
+    }
+  ],
+  "cleanupResults": []
+}
