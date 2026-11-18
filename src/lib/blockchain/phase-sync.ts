@@ -42,12 +42,22 @@ export async function syncPhasesFromChain(chainId: number, launchpadAddress: str
   const address = launchpadAddress.toLowerCase();
   const launchpad = await prisma.launchpad.findUnique({
     where: { contractAddress: address },
-    select: { id: true, name: true, phases: true },
+    select: { id: true, name: true, totalMaxSupply: true, phases: true },
   });
   if (!launchpad) return null;
 
   const contract = new ethers.Contract(address, launchpadInterface, getChainProvider(chainId));
-  const onChain: any[] = await contract.getAllPhases();
+  const [onChain, maxSupply]: [any[], bigint] = await Promise.all([
+    contract.getAllPhases(),
+    contract.totalMaxSupply(),
+  ]);
+
+  // Max supply is also mirrored here: older listener code stored totalSupply()
+  // (= minted so far), which made collections look sold out.
+  if (launchpad.totalMaxSupply !== Number(maxSupply)) {
+    await prisma.launchpad.update({ where: { id: launchpad.id }, data: { totalMaxSupply: Number(maxSupply) } });
+    console.log(`🔁 Max supply fixed for ${launchpad.name} (${address}): ${launchpad.totalMaxSupply} -> ${maxSupply}`);
+  }
 
   const result: PhaseSyncResult = { inserted: 0, updated: 0, removed: 0 };
   const byIndex = new Map(launchpad.phases.map((p) => [p.phaseIndex, p]));

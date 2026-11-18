@@ -1971,7 +1971,7 @@ export class ActivityListener {
           const [name, symbol, totalSupply, owner] = await Promise.all([
             launchpadContract.name(),
             launchpadContract.symbol(),
-            launchpadContract.totalSupply(),
+            launchpadContract.totalMaxSupply(), // max supply, NOT totalSupply() (= minted so far)
             launchpadContract.owner()
           ]);
           
@@ -2332,7 +2332,7 @@ export class ActivityListener {
           [name, symbol, totalSupply, owner] = await Promise.all([
             launchpadContract.name(),
             launchpadContract.symbol(),
-            launchpadContract.totalSupply(),
+            launchpadContract.totalMaxSupply(), // max supply, NOT totalSupply() (= minted so far)
             launchpadContract.owner()
           ]);
           break;
@@ -3034,7 +3034,7 @@ export class ActivityListener {
                 [name, symbol, totalSupply, owner] = await Promise.all([
                   launchpadContract.name(),
                   launchpadContract.symbol(),
-                  launchpadContract.totalSupply(),
+                  launchpadContract.totalMaxSupply(), // max supply, NOT totalSupply() (= minted so far)
                   launchpadContract.owner()
                 ]);
                 break;
