@@ -39,7 +39,7 @@ function getPollerReport() {
   return getMultiChainListenerManager().getPollerHealth().map(({ chainId, health }) => ({
     chainId,
     ...(health || {}),
-    stale: !!health && health.running && (health.lastSuccessAt === null || now - health.lastSuccessAt > POLLER_STALE_MS),
+    stale: !!health && health.running && (health.lastProgressAt === null || now - health.lastProgressAt > POLLER_STALE_MS),
   }));
 }
 

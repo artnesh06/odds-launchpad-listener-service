@@ -60,6 +60,8 @@ export interface PollerHealth {
   chunkSize: number;
   consecutiveErrors: number;
   lastSuccessAt: number | null;
+  /** Last time any work completed (event handled, range saved or idle cycle). Used by the watchdog. */
+  lastProgressAt: number | null;
   lastErrorAt: number | null;
   lastError: string | null;
 }
@@ -89,6 +91,7 @@ export class UnifiedEventPoller {
   private chunkSize: number;
   private consecutiveErrors = 0;
   private lastSuccessAt: number | null = null;
+  private lastProgressAt: number | null = null;
   private lastErrorAt: number | null = null;
   private lastError: string | null = null;
 
@@ -218,6 +221,7 @@ export class UnifiedEventPoller {
     this.cursor = await this.loadCursor();
     this.running = true;
     this.lastSuccessAt = Date.now();
+    this.lastProgressAt = Date.now();
     this.scheduleNext(0);
 
     console.log(`✅ Unified event poller started on chain ${this.context.chainId} (interval ${this.POLL_INTERVAL_MS}ms, max range ${this.MAX_CHUNK} blocks, ${this.CONFIRMATIONS} confirmations)`);
@@ -257,6 +261,7 @@ export class UnifiedEventPoller {
       chunkSize: this.chunkSize,
       consecutiveErrors: this.consecutiveErrors,
       lastSuccessAt: this.lastSuccessAt,
+      lastProgressAt: this.lastProgressAt,
       lastErrorAt: this.lastErrorAt,
       lastError: this.lastError,
     };
@@ -293,6 +298,7 @@ export class UnifiedEventPoller {
         await this.processRange(from, to);
         this.cursor = to;
         await this.saveCursor(to);
+        this.lastProgressAt = Date.now();
         chunks++;
         // Grow back towards the max range after a success
         if (this.chunkSize < this.MAX_CHUNK) {
@@ -305,6 +311,7 @@ export class UnifiedEventPoller {
       }
       this.consecutiveErrors = 0;
       this.lastSuccessAt = Date.now();
+      this.lastProgressAt = Date.now();
     } catch (error) {
       this.consecutiveErrors++;
       this.lastErrorAt = Date.now();
@@ -331,7 +338,9 @@ export class UnifiedEventPoller {
         console.log(`📦 [Factory] Found ${deployed.length} ContractDeployed event(s) in blocks ${from}-${to}`);
       }
       for (const event of deployed) {
+        this.assertRunning();
         await this.handleFactoryEvent(event);
+        this.lastProgressAt = Date.now();
       }
     }
 
@@ -359,8 +368,15 @@ export class UnifiedEventPoller {
     console.log(`📦 [Poller] Found ${logs.length} events in blocks ${from}-${to} for ${addresses.length} contracts`);
 
     for (const log of logs) {
+      this.assertRunning();
       await this.handleLaunchpadLog(log);
+      this.lastProgressAt = Date.now();
     }
+  }
+
+  /** Abort a range when stopping so the cursor is not saved past unprocessed events. */
+  private assertRunning(): void {
+    if (!this.running) throw new Error('poller stopped');
   }
 
   private async handleFactoryEvent(event: ethers.Log | ethers.EventLog): Promise<void> {
