@@ -187,35 +187,12 @@ export class MultiChainListenerManager {
           // Determine if using HTTP or WebSocket
           const isHttpProvider = !primaryRpcUrl.startsWith('ws://') && !primaryRpcUrl.startsWith('wss://');
           
-          // For HTTP providers with MANY launchpads (>20), only enable critical events to reduce polling load
-          // WebSocket providers can handle all events efficiently
-          let enabledEvents: string[] | undefined;
-          if (isHttpProvider && launchpadAddresses.length > 20) {
-            // MegaETH has extremely strict rate limits - only enable the most critical events
-            enabledEvents = [
-              'Transfer',           // Mints, transfers, burns (critical for NFT tracking)
-              'ContractDeployed',  // New launchpads (critical)
-              'Burned',            // Burn events (important for supply tracking)
-              'Revealed',          // Reveal events (important for metadata)
-            ];
-            console.log(`⚠️ Chain ${chain.chainId} using HTTP with ${launchpadAddresses.length} launchpads - limiting to ${enabledEvents.length} CRITICAL events only due to strict rate limits`);
-          } else if (isHttpProvider && launchpadAddresses.length > 10) {
-            // Moderate number of launchpads - enable more events
-            enabledEvents = [
-              'Transfer',           // Mints, transfers, burns
-              'ContractDeployed',  // New launchpads
-              'Burned',            // Burn events
-              'Airdropped',        // Airdrop events
-              'PhaseAdded',        // Phase management
-              'PhaseUpdated',      // Phase management
-              'Revealed',          // Reveal events
-              'Withdrawn',         // Withdrawal events
-            ];
-            console.log(`⚠️ Chain ${chain.chainId} using HTTP with ${launchpadAddresses.length} launchpads - limiting to ${enabledEvents.length} important events to reduce rate limits`);
-          } else {
-            // WebSocket or few launchpads - enable all events
-            console.log(`✅ Chain ${chain.chainId} using ${isHttpProvider ? 'HTTP' : 'WebSocket'} with ${launchpadAddresses.length} launchpads - enabling ALL events`);
-          }
+          // All launchpad events are fetched with ONE eth_getLogs per block range
+          // (topics are OR'ed), so enabling every event costs no extra RPC calls.
+          // The old "critical events only" limit silently dropped phase, price,
+          // pause, airdrop and withdraw updates once a chain had >10 launchpads.
+          const enabledEvents: string[] | undefined = undefined;
+          console.log(`✅ Chain ${chain.chainId} using ${isHttpProvider ? 'HTTP' : 'WebSocket'} with ${launchpadAddresses.length} launchpads - enabling ALL events`);
 
           // Create listener config with multiple RPC URLs support
           const config: ActivityListenerConfig = {

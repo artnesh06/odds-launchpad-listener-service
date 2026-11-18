@@ -21,6 +21,10 @@
 
 import { ethers } from 'ethers';
 import OddsLaunchpadABI from '../../../abi/OddsLaunchpad.json';
+import { schedulePhaseSync } from './phase-sync';
+
+/** Events after which a launchpad's phases are re-read from the contract. */
+const PHASE_SYNC_EVENTS = new Set(['Transfer', 'Airdropped', 'PhaseAdded', 'PhaseUpdated', 'PhaseRemoved']);
 
 import type { UserEventHandler, AdminEventHandler, MetadataEventHandler, SecurityEventHandler } from './event-handlers';
 
@@ -407,6 +411,9 @@ export class UnifiedEventPoller {
           new ethers.Contract(address, launchpadInterface, this.context.provider)
         );
       }
+
+      // Constructor phases emit no PhaseAdded event; read them from the contract
+      if (ethers.isAddress(address)) schedulePhaseSync(this.context.chainId, address, 3000);
     } catch (error) {
       // A handler bug must not block the chain; the event is logged for replay
       console.error(`❌ [Factory] Error processing ContractDeployed at block ${event.blockNumber}:`, error);
@@ -430,6 +437,14 @@ export class UnifiedEventPoller {
       }
 
       await eventMapping.handler(log.address.toLowerCase(), parsedLog, log);
+
+      // Phase rows (incl. per-phase minted counts) are re-read from the chain
+      if (PHASE_SYNC_EVENTS.has(eventMapping.eventName)) {
+        const isMint = eventMapping.eventName === 'Transfer' && BigInt(log.topics[1] || 0) === 0n;
+        if (eventMapping.eventName !== 'Transfer' || isMint) {
+          schedulePhaseSync(this.context.chainId, log.address);
+        }
+      }
     } catch (error) {
       // A handler bug must not block the chain
       console.error(`❌ [Poller] Error processing ${log.topics[0]?.slice(0, 10)} at block ${log.blockNumber} tx ${log.transactionHash}:`, error);

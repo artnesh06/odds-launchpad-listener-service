@@ -88,6 +88,7 @@ export const DEFAULT_EVENT_CONFIG: EventConfig[] = [
   { eventName: 'Airdropped', enabled: true, priority: 'high', phase: 1 },
   { eventName: 'PhaseAdded', enabled: true, priority: 'high', phase: 1 },
   { eventName: 'PhaseUpdated', enabled: true, priority: 'high', phase: 1 },
+  { eventName: 'PhaseRemoved', enabled: true, priority: 'high', phase: 1 },
   { eventName: 'Revealed', enabled: true, priority: 'high', phase: 1 },
   
   // Phase 2: Admin events (medium priority)

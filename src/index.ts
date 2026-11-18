@@ -806,6 +806,15 @@ async function startListeners() {
     await manager.initializeAll();
     console.log('✅ Chain listeners initialized');
 
+    // Self-heal phase rows from the contracts (missing constructor phases,
+    // removed phases, per-phase minted counts). Runs in the background.
+    if (process.env.PHASE_SYNC_ON_START !== 'false') {
+      const { syncAllPhases } = await import('./lib/blockchain/phase-sync');
+      for (const s of await manager.getStatus()) {
+        syncAllPhases(s.chainId).catch((e) => console.warn(`⚠️ Phase reconcile failed for chain ${s.chainId}:`, e?.message || e));
+      }
+    }
+
     // Note: Blockchain WebSocketManager is initialized per chain by MultiChainListenerManager
     // See MultiChainListenerManager.initializeWebSocketManager() for implementation
     console.log('ℹ️ Blockchain WebSocket monitoring is handled per chain by MultiChainListenerManager');
