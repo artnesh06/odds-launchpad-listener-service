@@ -85,8 +85,8 @@ function createPrismaClient(): PrismaClient {
     connectionUrl += `${separator}connection_limit=20&pool_timeout=30`;
   }
   
-  return new PrismaClient({
-    log: process.env.NODE_ENV === 'development' 
+  const client = new PrismaClient({
+    log: process.env.NODE_ENV === 'development'
       ? ['error', 'warn']
       : ['error'],
     datasources: {
@@ -95,6 +95,65 @@ function createPrismaClient(): PrismaClient {
       }
     }
   });
+  client.$use(blockTimeMiddleware);
+  return client;
+}
+
+// ---------------------------------------------------------------------------
+// Event time = block time
+//
+// Activities and mints used to get createdAt = "when the listener stored them",
+// so events replayed after downtime (or during a history backfill) showed up as
+// "minted 1h ago". When a row carries a blockNumber, createdAt is now the
+// timestamp of that block.
+// ---------------------------------------------------------------------------
+
+const blockTimeCache = new Map<string, Date>();
+
+async function blockTime(chainId: number, blockNumber: number): Promise<Date | null> {
+  const key = `${chainId}:${blockNumber}`;
+  const hit = blockTimeCache.get(key);
+  if (hit) return hit;
+  try {
+    // Lazy import: chain-provider depends on modules that import this file
+    const { getChainProvider } = await import('../lib/blockchain/chain-provider');
+    const block = await getChainProvider(chainId).getBlock(blockNumber);
+    if (!block) return null;
+    const date = new Date(block.timestamp * 1000);
+    if (blockTimeCache.size > 5000) blockTimeCache.clear();
+    blockTimeCache.set(key, date);
+    return date;
+  } catch {
+    return null; // fall back to the default (now)
+  }
+}
+
+function defaultChainId(): number {
+  const first = parseInt((process.env.LISTENER_CHAIN_IDS || '4326').split(',')[0], 10);
+  return Number.isFinite(first) ? first : 4326;
+}
+
+async function withBlockTime(data: any): Promise<void> {
+  if (!data || typeof data !== 'object' || data.createdAt) return;
+  const blockNumber = typeof data.blockNumber === 'number' ? data.blockNumber : Number(data.blockNumber);
+  if (!Number.isFinite(blockNumber) || blockNumber <= 0) return;
+  const chainId = typeof data.chainId === 'number' ? data.chainId : defaultChainId();
+  const time = await blockTime(chainId, blockNumber);
+  if (time) data.createdAt = time;
+}
+
+const BLOCK_TIME_MODELS = new Set(['Activity', 'Mint']);
+
+async function blockTimeMiddleware(params: any, next: (params: any) => Promise<any>) {
+  if (params.model && BLOCK_TIME_MODELS.has(params.model)) {
+    if (params.action === 'create') await withBlockTime(params.args?.data);
+    else if (params.action === 'upsert') await withBlockTime(params.args?.create);
+    else if (params.action === 'createMany') {
+      const rows = Array.isArray(params.args?.data) ? params.args.data : [params.args?.data];
+      for (const row of rows) await withBlockTime(row);
+    }
+  }
+  return next(params);
 }
 
 /**

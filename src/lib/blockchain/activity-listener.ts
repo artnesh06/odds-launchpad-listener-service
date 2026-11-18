@@ -3381,6 +3381,14 @@ export class ActivityListener {
             let mintRetryCount = 0;
             const mintMaxRetries = 3;
             let mintCreated = false;
+            // Mint time = block time (not processing time, which differs after downtime/backfill)
+            let mintTime = new Date();
+            try {
+              const mintBlock = await this.provider.getBlock(event.blockNumber);
+              if (mintBlock?.timestamp) mintTime = new Date(mintBlock.timestamp * 1000);
+            } catch {
+              // keep processing time
+            }
             
             while (mintRetryCount < mintMaxRetries && !mintCreated) {
               try {
@@ -3396,7 +3404,7 @@ export class ActivityListener {
                         price: price,
                         txHash: event.txHash,
                         blockNumber: event.blockNumber,
-                        createdAt: new Date()
+                        createdAt: mintTime
                       }
                     });
 
@@ -3436,7 +3444,7 @@ export class ActivityListener {
                       where: { id: launchpad.id },
                       data: {
                         volume: newVolume,
-                        lastMintAt: new Date(),
+                        lastMintAt: mintTime,
                         mintedCount: actualMintCount
                       }
                     });
